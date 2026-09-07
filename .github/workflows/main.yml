@@ -1,0 +1,67 @@
+name: Build Lokela AAB
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract Lokela project
+        run: |
+          mkdir lokela-project
+          unzip -q lokela.zip -d lokela-project
+          echo "Project extracted:"
+          ls -la lokela-project
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Create temporary signing key
+        working-directory: lokela-project
+        run: |
+          keytool -genkeypair \
+            -alias upload \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -keystore my-upload-key.jks \
+            -storepass Lokela123! \
+            -keypass Lokela123! \
+            -dname "CN=Lokela, OU=Lokela, O=Lokela, L=India, ST=India, C=IN"
+
+      - name: Make Gradle executable
+        working-directory: lokela-project
+        run: chmod +x gradlew
+
+      - name: Build AAB
+        working-directory: lokela-project
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/lokela-project/my-upload-key.jks
+          STORE_PASSWORD: Lokela123!
+          KEY_PASSWORD: Lokela123!
+        run: ./gradlew bundleRelease --stacktrace
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lokela-AAB
+          path: lokela-project/app/build/outputs/bundle/release/*.aab
